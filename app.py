@@ -213,7 +213,15 @@ async def predict(file: UploadFile, authorization: str = Header(None)):
         2: "normal",
         3: "squamous cell carcinoma"
     }
+    risk_map = {
+        "adenocarcinoma left lower lobe": {"risk": "High", "next_scan": "PET-CT in 1 month"},
+        "large cell carcinoma": {"risk": "Moderate", "next_scan": "CT in 3 months"},
+        "squamous cell carcinoma": {"risk": "High", "next_scan": "PET-CT in 1 month"},
+        "normal": {"risk": "Low", "next_scan": "Routine CT in 12 months"}
+    }
     prediction = class_map.get(predicted.item(), str(predicted.item()))
+    risk_info = risk_map.get(
+        prediction, {"risk": "Unknown", "next_scan": "Consult physician"})
     # Generate PDF
     import uuid
     filename = f"report_{user_id}_{uuid.uuid4().hex}.pdf"
@@ -226,6 +234,8 @@ async def predict(file: UploadFile, authorization: str = Header(None)):
     pdf.drawString(50, 680, f"Age: {user_info['age']}")
     pdf.drawString(50, 660, f"Weight: {user_info['weight']}")
     pdf.drawString(50, 630, f"Prediction: {prediction}")
+    pdf.drawString(50, 610, f"Risk Level: {risk_info['risk']}")
+    pdf.drawString(50, 590, f"Next Recommended Scan: {risk_info['next_scan']}")
     img_buffer = io.BytesIO()
     image.save(img_buffer, format='PNG')
     img_buffer.seek(0)
@@ -238,9 +248,13 @@ async def predict(file: UploadFile, authorization: str = Header(None)):
     c.execute('INSERT INTO reports (user_id, filename, prediction) VALUES (?, ?, ?)',
               (user_id, filename, prediction))
     conn.commit()
+    # Fetch last scan date (previous report for this user, excluding current)
+    c.execute('SELECT created_at FROM reports WHERE user_id = ? AND filename != ? ORDER BY created_at DESC LIMIT 1', (user_id, filename))
+    last_scan_row = c.fetchone()
     conn.close()
+    last_scan_date = last_scan_row[0] if last_scan_row else None
     url = f"/reports/{filename}"
-    return {"success": True, "report_url": url, "prediction": prediction}
+    return {"success": True, "report_url": url, "prediction": prediction, "risk_level": risk_info['risk'], "next_scan": risk_info['next_scan'], "last_scan_date": last_scan_date}
 
 
 @app.get("/history")
