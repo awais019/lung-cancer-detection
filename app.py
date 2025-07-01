@@ -136,7 +136,7 @@ async def register(user: RegisterRequest):
             "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-        return {"success": True, "message": "User registered successfully", "token": token}
+        return {"success": True, "message": "User registered successfully", "token": token, "name": user.name}
     except sqlite3.IntegrityError:
         return {"success": False, "error": "Email already registered"}
 
@@ -145,19 +145,20 @@ async def register(user: RegisterRequest):
 async def signin(credentials: SignInRequest):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('SELECT id, password FROM users WHERE email = ?',
+    c.execute('SELECT id, name, password FROM users WHERE email = ?',
               (credentials.email,))
     row = c.fetchone()
     conn.close()
-    if row and row[1] == credentials.password:
+    if row and row[2] == credentials.password:
         user_id = row[0]
+        user_name = row[1]
         payload = {
             "user_id": user_id,
             "email": credentials.email,
             "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-        return {"success": True, "message": "Signin successful", "token": token}
+        return {"success": True, "message": "Signin successful", "token": token, "name": user_name}
     elif row:
         # Email exists but password is wrong
         raise HTTPException(status_code=401, detail="Invalid password", headers={
